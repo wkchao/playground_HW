@@ -45,6 +45,10 @@ export class Node {
   /** Activation function that takes total input and returns node's output */
   activation: ActivationFunction;
 
+  /** 1st and 2nd moment vector for bias */
+  mBias: number;
+  vBias: number;
+
   /**
    * Creates a new node with the provided id and activation function.
    */
@@ -53,6 +57,8 @@ export class Node {
     this.activation = activation;
     if (initZero) {
       this.bias = 0;
+      this.mBias = 0;
+      this.vBias = 0;
     }
   }
 
@@ -168,6 +174,10 @@ export class Link {
   numAccumulatedDers = 0;
   regularization: RegularizationFunction;
 
+  /** 1st & 2nd moment vector for weight */
+  mWeight = Math.random() - 0.5;
+  vWeight = Math.random() - 0.5;
+
   /**
    * Constructs a link in the neural network initialized with random weight.
    *
@@ -184,6 +194,8 @@ export class Link {
     this.regularization = regularization;
     if (initZero) {
       this.weight = 0;
+      this.mWeight = 0;
+      this.vWeight = 0;
     }
   }
 }
@@ -392,4 +404,82 @@ export function forEachNode(network: Node[][], ignoreInputs: boolean,
 /** Returns the output node in the network. */
 export function getOutputNode(network: Node[][]) {
   return network[network.length - 1][0];
+}
+
+
+
+/* My work
+==============================================================================*/
+
+/**
+ * Updates the weights of the network with Adam 
+ */
+export function updateWeightsWithAdam(network: Node[][], learningRate: number,
+    regularizationRate: number, iteration: number, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8) {
+  const alpha = learningRate;
+  const t = iteration; // Training iteration count
+
+  for (let layerIdx = 1; layerIdx < network.length; layerIdx++) {
+    let currentLayer = network[layerIdx];
+    for (let i = 0; i < currentLayer.length; i++) {
+      let node = currentLayer[i];
+
+      // --- Update bias with Adam ---
+      if (node.numAccumulatedDers > 0) {
+        // Get gradient
+        const gBias = node.accInputDer / node.numAccumulatedDers;
+
+        // Update 1st and 2nd moment estimates
+        node.mBias = beta1 * node.mBias + (1 - beta1) * gBias;
+        node.vBias = beta2 * node.vBias + (1 - beta2) * gBias * gBias;
+
+        // Compute bias-corrected 1st and 2nd moment estimates
+        const mHatBias = node.mBias / (1 - Math.pow(beta1, t));
+        const vHatBias = node.vBias / (1 - Math.pow(beta2, t));
+
+        // Update bias
+        node.bias -= alpha * mHatBias / (Math.sqrt(vHatBias) + epsilon);
+        node.accInputDer = 0;
+        node.numAccumulatedDers = 0;
+      }
+
+      // --- Update weights with Adam ---
+      for (let j = 0; j < node.inputLinks.length; j++) {
+        let link = node.inputLinks[j];
+        if (link.isDead) continue;
+
+        if (link.numAccumulatedDers > 0) {
+          // Get gradient
+          const gWeight = link.accErrorDer / link.numAccumulatedDers;
+
+          // Update 1st and 2nd moment estimates
+          link.mWeight = beta1 * link.mWeight + (1 - beta1) * gWeight;
+          link.vWeight = beta2 * link.vWeight + (1 - beta2) * gWeight * gWeight;
+
+          // Compute bias-corrected 1st and 2nd moment estimates
+          const mHatWeight = link.mWeight / (1 - Math.pow(beta1, t));
+          const vHatWeight = link.vWeight / (1 - Math.pow(beta2, t));
+
+          // Compute regularization derivative
+          let regulDer = link.regularization ? link.regularization.der(link.weight) : 0;
+
+          // Update weight
+          link.weight = link.weight - alpha * (
+              (mHatWeight / (Math.sqrt(vHatWeight) + epsilon)) +
+              regularizationRate * regulDer
+          );
+
+          // Handle L1 regularization case (weight pruning)
+          if (link.regularization === RegularizationFunction.L1 &&
+              link.weight * (link.weight - alpha * regularizationRate * regulDer) < 0) {
+            link.weight = 0;
+            link.isDead = true;
+          }
+
+          link.accErrorDer = 0;
+          link.numAccumulatedDers = 0;
+        }
+      }
+    }
+  }
 }

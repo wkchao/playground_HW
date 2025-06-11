@@ -914,6 +914,9 @@ function oneStep(): void {
     nn.backProp(network, point.label, nn.Errors.SQUARE);
     if ((i + 1) % state.batchSize === 0) {
       nn.updateWeights(network, state.learningRate, state.regularizationRate);
+      // TODO
+      // step
+      nn.updateWeightsWithAdam(network, state.learningRate, state.regularizationRate, 1);
     }
   });
   // Compute the loss.
