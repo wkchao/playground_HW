@@ -46,8 +46,8 @@ export class Node {
   activation: ActivationFunction;
 
   /** 1st and 2nd moment vector for bias */
-  mBias: number;
-  vBias: number;
+  mBias = 0.1;
+  vBias = 0.1;
 
   /**
    * Creates a new node with the provided id and activation function.
@@ -175,8 +175,8 @@ export class Link {
   regularization: RegularizationFunction;
 
   /** 1st & 2nd moment vector for weight */
-  mWeight = Math.random() - 0.5;
-  vWeight = Math.random() - 0.5;
+  mWeight = 0;
+  vWeight = 0;
 
   /**
    * Constructs a link in the neural network initialized with random weight.
