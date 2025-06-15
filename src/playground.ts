@@ -346,6 +346,13 @@ function makeGUI() {
   regularDropdown.property("value",
       getKeyFromValue(regularizations, state.regularization));
 
+  let optimizer = d3.select("#optimizer").on("change", function() {
+    state.optimizer = this.value;
+    parametersChanged = true;
+    reset();
+  });
+  optimizer.property("value", state.optimizer);
+
   let regularRate = d3.select("#regularRate").on("change", function() {
     state.regularizationRate = +this.value;
     parametersChanged = true;
@@ -913,10 +920,14 @@ function oneStep(): void {
     nn.forwardProp(network, input);
     nn.backProp(network, point.label, nn.Errors.SQUARE);
     if ((i + 1) % state.batchSize === 0) {
-      // nn.updateWeights(network, state.learningRate, state.regularizationRate);
-      // TODO
-      // step
-      nn.updateWeightsWithAdam(network, state.learningRate, state.regularizationRate, iter);
+      switch (state.optimizer) {
+        case "Adam":
+          nn.updateWeightsWithAdam(network, state.learningRate, state.regularizationRate, iter);
+          break;
+        default:
+          nn.updateWeights(network, state.learningRate, state.regularizationRate);
+          break;
+      }
     }
   });
   // Compute the loss.
