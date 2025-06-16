@@ -346,6 +346,13 @@ function makeGUI() {
   regularDropdown.property("value",
       getKeyFromValue(regularizations, state.regularization));
 
+  let layerType = d3.select("#layerType").on("change", function() {
+    state.layerType = this.value;
+    parametersChanged = true;
+    reset();
+  });
+  layerType.property("value", state.layerType);
+
   let optimizer = d3.select("#optimizer").on("change", function() {
     state.optimizer = this.value;
     parametersChanged = true;
