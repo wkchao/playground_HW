@@ -31,10 +31,8 @@ export class Node {
   batchOutput: number[] = [];
   /** Error derivative with respect to this node's output. */
   outputDer = 0;
-  outputDerBatch: number[] = [];
   /** Error derivative with respect to this node's total input. */
   inputDer = 0;
-  inputDerBatch: number[] = [];
   /**
    * Accumulated error derivative with respect to this node's total input since
    * the last update. This derivative equals dE/db where b is the node's
@@ -613,14 +611,14 @@ export function backPropWithBatch(network: Node[][], targetBatch: number[],
     errorFunc: ErrorFunction): void {
   targetBatch.forEach((target, k) => {
     let outputNode = network[network.length - 1][0];
-    outputNode.outputDerBatch[k] = errorFunc.der(outputNode.batchOutput[k], target);
+    outputNode.outputDer = errorFunc.der(outputNode.batchOutput[k], target);
 
     for (let layerIdx = network.length - 1; layerIdx >= 1; layerIdx--) {
       let currentLayer = network[layerIdx];
       for (let i = 0; i < currentLayer.length; i++) {
         let node = currentLayer[i];
 
-        node.inputDerBatch[k] = node.outputDerBatch[k] * node.activation.der(node.totalBatchInput[k]);
+        node.inputDer = node.outputDer * node.activation.der(node.totalBatchInput[k]);
         node.accInputDer += node.inputDer;
         node.numAccumulatedDers++;
       }
@@ -643,10 +641,10 @@ export function backPropWithBatch(network: Node[][], targetBatch: number[],
       let prevLayer = network[layerIdx - 1];
       for (let i = 0; i < prevLayer.length; i++) {
         let node = prevLayer[i];
-        node.outputDerBatch[k] = 0;
+        node.outputDer = 0;
         for (let j = 0; j < node.outputs.length; j++) {
           let output = node.outputs[j];
-          node.outputDerBatch[k] += output.weight * output.dest.inputDer;
+          node.outputDer += output.weight * output.dest.inputDer;
         }
       }
     }
