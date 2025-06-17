@@ -837,7 +837,7 @@ function updateDecisionBoundary(network: nn.Node[][], firstTime: boolean) {
       let x = xScale(i);
       let y = yScale(j);
       let input = constructInput(x, y);
-      nn.forwardProp(network, input);
+      nn.forwardProp(network, input, state.normalization);
       nn.forEachNode(network, true, node => {
         boundary[node.id][i][j] = node.output;
       });
@@ -873,7 +873,7 @@ function getLoss(network: nn.Node[][], dataPoints: Example2D[]): number {
       for (let i = 0; i < dataPoints.length; i++) {
         let dataPoint = dataPoints[i];
         let input = constructInput(dataPoint.x, dataPoint.y);
-        let output = nn.forwardProp(network, input);
+        let output = nn.forwardProp(network, input, state.normalization);
         loss += nn.Errors.SQUARE.error(output, dataPoint.label);
       }
       break;
@@ -961,7 +961,7 @@ function oneStep(): void {
         default:
           batchPoint.forEach((point) => {
             let input = constructInput(point.x, point.y);
-            nn.forwardProp(network, input);
+            nn.forwardProp(network, input, state.normalization);
             nn.backProp(network, point.label, nn.Errors.SQUARE);
           })
           break;

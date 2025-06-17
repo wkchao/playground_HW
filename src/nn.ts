@@ -67,6 +67,7 @@ export class Node {
   lnNormalized: number = 0; // 归一化后的值
   lnMean: number = 0;
   lnVariance: number = 0;
+  lnEpsilon: number = 1e-8;
   
   // 新增梯度累积
   bnGammaGrad: number = 0;
@@ -329,7 +330,7 @@ export function buildNetwork(
  *     nodes in the network.
  * @return The final output of the network.
  */
-export function forwardProp(network: Node[][], inputs: number[]): number {
+export function forwardProp(network: Node[][], inputs: number[], normalization: String): number {
   let inputLayer = network[0];
   if (inputs.length !== inputLayer.length) {
     throw new Error("The number of inputs must match the number of nodes in" +
@@ -346,6 +347,32 @@ export function forwardProp(network: Node[][], inputs: number[]): number {
     for (let i = 0; i < currentLayer.length; i++) {
       let node = currentLayer[i];
       node.updateOutput();
+    }
+    if (normalization === "Layer" && layerIdx < network.length - 1) {
+      const layerSize = currentLayer.length;
+
+      // cal mean
+      let mean: number = 0;
+      for (let i = 0; i < layerSize; i++) {
+        let node = currentLayer[i];
+        mean += node.output;
+      }
+      mean /= layerSize;
+  
+      // cal var
+      let variance: number = 0;
+      for (let i = 0; i < layerSize; i++) {
+        let node = currentLayer[i];
+        variance += (node.output - mean) ** 2;
+      }
+      variance /= layerSize;
+  
+      // normalized
+      for (let i = 0; i < layerSize; i++) {
+        let node = currentLayer[i];
+        node.output = (node.output - mean) / Math.sqrt(variance + node.lnEpsilon);
+        node.output = node.lnGamma * node.output + node.lnBeta;
+      }
     }
   }
   return network[network.length - 1][0].output;
