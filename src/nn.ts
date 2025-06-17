@@ -27,10 +27,14 @@ export class Node {
   outputs: Link[] = [];
   totalInput: number;
   output: number;
+  totalBatchInput: number[] = [];
+  batchOutput: number[] = [];
   /** Error derivative with respect to this node's output. */
   outputDer = 0;
+  outputDerBatch: number[] = [];
   /** Error derivative with respect to this node's total input. */
   inputDer = 0;
+  inputDerBatch: number[] = [];
   /**
    * Accumulated error derivative with respect to this node's total input since
    * the last update. This derivative equals dE/db where b is the node's
@@ -49,10 +53,31 @@ export class Node {
   mBias = 0.1;
   vBias = 0.1;
 
+  // 新增BN参数
+  bnGamma: number = 1;   // 缩放参数
+  bnBeta: number = 0;    // 平移参数
+  bnMean: number = 0;    // 移动均值
+  bnVariance: number = 1;// 移动方差
+  bnEpsilon: number = 1e-8;
+  bnNormalized: number = 0; // 归一化后的值
+  
+  // 新增LN参数
+  lnGamma: number = 1;    // 缩放参数
+  lnBeta: number = 0;     // 平移参数
+  lnNormalized: number = 0; // 归一化后的值
+  lnMean: number = 0;
+  lnVariance: number = 0;
+  
+  // 新增梯度累积
+  bnGammaGrad: number = 0;
+  bnBetaGrad: number = 0;
+  lnGammaGrad: number = 0;
+  lnBetaGrad: number = 0;
+
   /**
    * Creates a new node with the provided id and activation function.
    */
-  constructor(id: string, activation: ActivationFunction, initZero?: boolean) {
+  constructor(id: string, activation: ActivationFunction, normalization: String, initZero?: boolean) {
     this.id = id;
     this.activation = activation;
     if (initZero) {
@@ -70,8 +95,49 @@ export class Node {
       let link = this.inputLinks[j];
       this.totalInput += link.weight * link.source.output;
     }
+
     this.output = this.activation.output(this.totalInput);
     return this.output;
+  }
+
+  updateBatchOutput(): void {
+    // Stores total input into the node.
+    for (let i = 0; i < this.inputLinks[0].source.batchOutput.length; i++) {
+      this.totalInput = this.bias;
+      for (let j = 0; j < this.inputLinks.length; j++) {
+        let link = this.inputLinks[j];
+        this.totalInput += link.weight * link.source.batchOutput[i];
+      }
+
+      this.output = this.activation.output(this.totalInput);
+
+      this.totalBatchInput[i] = this.totalInput;
+      this.batchOutput[i] = this.output;
+    }
+  }
+
+  batchNormalization(): void {
+    const batchSize = this.batchOutput.length;
+
+    // cal mean
+    let mean: number = 0;
+    for (let i = 0; i < batchSize; i++) {
+      mean += this.batchOutput[i];
+    }
+    mean /= batchSize;
+
+    // cal var
+    let variance: number = 0;
+    for (let i = 0; i < batchSize; i++) {
+      variance += (this.batchOutput[i] - mean) ** 2;
+    }
+    variance /= batchSize;
+
+    // normalized
+    for (let i = 0; i < batchSize; i++) {
+      this.batchOutput[i] = (this.batchOutput[i] - mean) / Math.sqrt(variance + this.bnEpsilon);
+      this.batchOutput[i] = this.bnGamma * this.batchOutput[i] + this.bnBeta;
+    }
   }
 }
 
@@ -215,6 +281,7 @@ export class Link {
  */
 export function buildNetwork(
     networkShape: number[], activation: ActivationFunction,
+    normalization: String,
     outputActivation: ActivationFunction,
     regularization: RegularizationFunction,
     inputIds: string[], initZero?: boolean): Node[][] {
@@ -236,7 +303,7 @@ export function buildNetwork(
         id++;
       }
       let node = new Node(nodeId,
-          isOutputLayer ? outputActivation : activation, initZero);
+          isOutputLayer ? outputActivation : activation, normalization, initZero);
       currentLayer.push(node);
       if (layerIdx >= 1) {
         // Add links from nodes in the previous layer to this node.
@@ -482,4 +549,79 @@ export function updateWeightsWithAdam(network: Node[][], learningRate: number,
       }
     }
   }
+}
+
+export function forwardPropWithBatch(network: Node[][], inputs: number[][]): number[] {
+  let inputLayer = network[0];
+
+  if (inputs[0].length !== inputLayer.length) {
+    throw new Error("The number of inputs must match the number of nodes in" +
+        " the input layer");
+  }
+  for (let layerIdx = 0; layerIdx < network.length; layerIdx++) {
+    inputs.forEach((input, bni) => {
+      if (layerIdx === 0) {
+        for (let i = 0; i < inputLayer.length; i++) {
+          let node = inputLayer[i];
+          node.batchOutput[bni] = input[i];
+        }
+      } else {
+        let currentLayer = network[layerIdx];
+        // Update all the nodes in this layer.
+        for (let i = 0; i < currentLayer.length; i++) {
+          let node = currentLayer[i];
+          node.updateBatchOutput();
+          if (layerIdx === network.length - 1) {
+          } else {
+            node.batchNormalization()
+          }
+        }
+      }
+    })
+  }
+  return network[network.length - 1][0].batchOutput;
+}
+
+export function backPropWithBatch(network: Node[][], targetBatch: number[],
+    errorFunc: ErrorFunction): void {
+  targetBatch.forEach((target, k) => {
+    let outputNode = network[network.length - 1][0];
+    outputNode.outputDerBatch[k] = errorFunc.der(outputNode.batchOutput[k], target);
+
+    for (let layerIdx = network.length - 1; layerIdx >= 1; layerIdx--) {
+      let currentLayer = network[layerIdx];
+      for (let i = 0; i < currentLayer.length; i++) {
+        let node = currentLayer[i];
+
+        node.inputDerBatch[k] = node.outputDerBatch[k] * node.activation.der(node.totalBatchInput[k]);
+        node.accInputDer += node.inputDer;
+        node.numAccumulatedDers++;
+      }
+
+      for (let i = 0; i < currentLayer.length; i++) {
+        let node = currentLayer[i];
+        for (let j = 0; j < node.inputLinks.length; j++) {
+          let link = node.inputLinks[j];
+          if (link.isDead) {
+            continue;
+          } 
+          link.errorDer = node.inputDer * link.source.batchOutput[k];
+          link.accErrorDer += link.errorDer;
+          link.numAccumulatedDers++;
+        }
+      }
+      if (layerIdx === 1) {
+        continue;
+      }
+      let prevLayer = network[layerIdx - 1];
+      for (let i = 0; i < prevLayer.length; i++) {
+        let node = prevLayer[i];
+        node.outputDerBatch[k] = 0;
+        for (let j = 0; j < node.outputs.length; j++) {
+          let output = node.outputs[j];
+          node.outputDerBatch[k] += output.weight * output.dest.inputDer;
+        }
+      }
+    }
+  })
 }

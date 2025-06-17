@@ -346,12 +346,12 @@ function makeGUI() {
   regularDropdown.property("value",
       getKeyFromValue(regularizations, state.regularization));
 
-  let layerType = d3.select("#layerType").on("change", function() {
-    state.layerType = this.value;
+  let normalization = d3.select("#normalization").on("change", function() {
+    state.normalization = this.value;
     parametersChanged = true;
     reset();
   });
-  layerType.property("value", state.layerType);
+  normalization.property("value", state.normalization);
 
   let optimizer = d3.select("#optimizer").on("change", function() {
     state.optimizer = this.value;
@@ -853,11 +853,30 @@ function updateDecisionBoundary(network: nn.Node[][], firstTime: boolean) {
 
 function getLoss(network: nn.Node[][], dataPoints: Example2D[]): number {
   let loss = 0;
-  for (let i = 0; i < dataPoints.length; i++) {
-    let dataPoint = dataPoints[i];
-    let input = constructInput(dataPoint.x, dataPoint.y);
-    let output = nn.forwardProp(network, input);
-    loss += nn.Errors.SQUARE.error(output, dataPoint.label);
+  let inputBatch: number[][] = [];
+  switch (state.normalization) {
+    case "Batch":
+      for (let i = 0; i < dataPoints.length; i++) {
+        let batchNum = (i + 1) % state.batchSize;
+        let dataPoint = dataPoints[i];
+        let input = constructInput(dataPoint.x, dataPoint.y);
+        inputBatch[batchNum] = input;
+        if (batchNum === 0) {
+          let outputs = nn.forwardPropWithBatch(network, inputBatch);
+          outputs.forEach((output) => {
+            loss += nn.Errors.SQUARE.error(output, dataPoint.label);
+          });
+        }
+      }
+      break;
+    default:
+      for (let i = 0; i < dataPoints.length; i++) {
+        let dataPoint = dataPoints[i];
+        let input = constructInput(dataPoint.x, dataPoint.y);
+        let output = nn.forwardProp(network, input);
+        loss += nn.Errors.SQUARE.error(output, dataPoint.label);
+      }
+      break;
   }
   return loss / dataPoints.length;
 }
@@ -922,11 +941,32 @@ function constructInput(x: number, y: number): number[] {
 
 function oneStep(): void {
   iter++;
+  let batchPoint: Example2D[] = [];
+  let inputBatch: number[][] = [];
+  let labelBatch: number[] = [];
   trainData.forEach((point, i) => {
-    let input = constructInput(point.x, point.y);
-    nn.forwardProp(network, input);
-    nn.backProp(network, point.label, nn.Errors.SQUARE);
-    if ((i + 1) % state.batchSize === 0) {
+    let batchNum = (i + 1) % state.batchSize;
+    batchPoint[batchNum] = point;
+    if (batchNum === 0) {
+      switch (state.normalization) {
+        case "Batch":
+          batchPoint.forEach((point, bni) => {
+            let input = constructInput(point.x, point.y);
+            inputBatch[bni] = input;
+            labelBatch[bni] = point.label ;
+          })
+          nn.forwardPropWithBatch(network, inputBatch);
+          nn.backPropWithBatch(network, labelBatch, nn.Errors.SQUARE);
+          break;
+        default:
+          batchPoint.forEach((point) => {
+            let input = constructInput(point.x, point.y);
+            nn.forwardProp(network, input);
+            nn.backProp(network, point.label, nn.Errors.SQUARE);
+          })
+          break;
+      }
+
       switch (state.optimizer) {
         case "Adam":
           nn.updateWeightsWithAdam(network, state.learningRate, state.regularizationRate, iter);
@@ -976,7 +1016,7 @@ function reset(onStartup=false) {
   let shape = [numInputs].concat(state.networkShape).concat([1]);
   let outputActivation = (state.problem === Problem.REGRESSION) ?
       nn.Activations.LINEAR : nn.Activations.TANH;
-  network = nn.buildNetwork(shape, state.activation, outputActivation,
+  network = nn.buildNetwork(shape, state.activation, state.normalization, outputActivation,
       state.regularization, constructInputIds(), state.initZero);
   lossTrain = getLoss(network, trainData);
   lossTest = getLoss(network, testData);

@@ -110,7 +110,7 @@ export class State {
     {name: "dataset", type: Type.OBJECT, keyMap: datasets},
     {name: "regDataset", type: Type.OBJECT, keyMap: regDatasets},
     {name: "learningRate", type: Type.NUMBER},
-    {name: "layerType", type: Type.STRING},
+    {name: "normalization", type: Type.STRING},
     {name: "optimizer", type: Type.STRING},
     {name: "regularizationRate", type: Type.NUMBER},
     {name: "noise", type: Type.NUMBER},
@@ -137,7 +137,7 @@ export class State {
 
   [key: string]: any;
   learningRate = 0.03;
-  layerType = "Default";
+  normalization = "none";
   optimizer = "Default";
   regularizationRate = 0;
   showTestData = false;
