@@ -853,30 +853,11 @@ function updateDecisionBoundary(network: nn.Node[][], firstTime: boolean) {
 
 function getLoss(network: nn.Node[][], dataPoints: Example2D[]): number {
   let loss = 0;
-  let inputBatch: number[][] = [];
-  switch (state.normalization) {
-    case "Batch":
-      for (let i = 0; i < dataPoints.length; i++) {
-        let batchNum = (i + 1) % state.batchSize;
-        let dataPoint = dataPoints[i];
-        let input = constructInput(dataPoint.x, dataPoint.y);
-        inputBatch[batchNum] = input;
-        if (batchNum === 0) {
-          let outputs = nn.forwardPropWithBatch(network, inputBatch);
-          outputs.forEach((output) => {
-            loss += nn.Errors.SQUARE.error(output, dataPoint.label);
-          });
-        }
-      }
-      break;
-    default:
-      for (let i = 0; i < dataPoints.length; i++) {
-        let dataPoint = dataPoints[i];
-        let input = constructInput(dataPoint.x, dataPoint.y);
-        let output = nn.forwardProp(network, input, state.normalization);
-        loss += nn.Errors.SQUARE.error(output, dataPoint.label);
-      }
-      break;
+  for (let i = 0; i < dataPoints.length; i++) {
+    let dataPoint = dataPoints[i];
+    let input = constructInput(dataPoint.x, dataPoint.y);
+    let output = nn.forwardProp(network, input, state.normalization);
+    loss += nn.Errors.SQUARE.error(output, dataPoint.label);
   }
   return loss / dataPoints.length;
 }
